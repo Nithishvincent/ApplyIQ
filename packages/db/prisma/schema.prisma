@@ -1,0 +1,510 @@
+// =============================================================
+//  ApplyIQ — Prisma Schema
+//  PostgreSQL via Prisma ORM
+// =============================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearch", "fullTextIndex"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// =============================================================
+// ENUMS
+// =============================================================
+
+enum JobType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERNSHIP
+  FREELANCE
+}
+
+enum WorkMode {
+  REMOTE
+  HYBRID
+  ONSITE
+}
+
+enum CompanySize {
+  STARTUP    // 1–50
+  SMALL      // 51–200
+  MID        // 201–1000
+  LARGE      // 1001–5000
+  ENTERPRISE // 5000+
+}
+
+enum ApplicationStatus {
+  SAVED
+  APPLIED
+  SCREENING
+  INTERVIEW
+  OFFER
+  REJECTED
+  WITHDRAWN
+}
+
+enum AtsType {
+  GREENHOUSE
+  LEVER
+  WORKDAY
+  ASHBY
+  SMARTRECRUITERS
+  UNKNOWN
+}
+
+enum JobSource {
+  REMOTIVE
+  ADZUNA
+  THE_MUSE
+  JSEARCH
+  HN_HIRING
+  COMPANY_SITE
+  MANUAL
+}
+
+enum InteractionType {
+  EMAIL_RECEIVED
+  EMAIL_SENT
+  PHONE_CALL
+  VIDEO_INTERVIEW
+  ONSITE_INTERVIEW
+  OFFER_RECEIVED
+  NOTE
+  STATUS_CHANGE
+}
+
+enum AuditAction {
+  FORM_FILLED
+  FORM_SUBMITTED
+  CAPTCHA_DETECTED
+  SCREENSHOT_TAKEN
+  ERROR
+  DRY_RUN_COMPLETED
+}
+
+// =============================================================
+// USER & AUTH
+// =============================================================
+
+model User {
+  id               String   @id @default(cuid())
+  email            String   @unique
+  name             String?
+  image            String?
+  emailVerified    DateTime?
+
+  // NextAuth.js accounts/sessions
+  accounts         Account[]
+  sessions         Session[]
+
+  // App-specific
+  profile          Profile?
+  applications     Application[]
+  preferences      Preferences?
+
+  // Push notifications (mobile)
+  fcmToken         String?
+  expoPushToken    String?
+
+  // Gmail integration
+  gmailAccessToken  String?
+  gmailRefreshToken String?
+  gmailTokenExpiry  DateTime?
+  gmailSyncEnabled  Boolean  @default(false)
+  gmailLastSynced   DateTime?
+
+  // Timestamps
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@map("users")
+}
+
+// NextAuth.js required tables
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// =============================================================
+// USER PREFERENCES
+// =============================================================
+
+model Preferences {
+  id                    String        @id @default(cuid())
+  userId                String        @unique
+
+  // Job search preferences
+  desiredRoles          String[]      // e.g. ["Software Engineer", "Full Stack Developer"]
+  salaryMin             Int?          // USD per year
+  salaryMax             Int?
+  jobTypes              JobType[]
+  workModes             WorkMode[]
+  preferredLocations    String[]      // e.g. ["San Francisco, CA", "Remote"]
+  targetIndustries      String[]      // e.g. ["SaaS", "FinTech"]
+  companySizes          CompanySize[]
+  blacklistedCompanies  String[]
+
+  // Automation settings
+  minMatchScore         Int           @default(70)  // 0-100
+  autoApplyEnabled      Boolean       @default(false)
+  autoApplyThreshold    Int           @default(85)  // score needed for auto-approve
+  maxDailyApplications  Int           @default(10)
+  applyHoursStart       Int           @default(9)   // 24h format
+  applyHoursEnd         Int           @default(17)
+
+  // Notification preferences
+  notifyNewMatches      Boolean       @default(true)
+  notifyQueueReady      Boolean       @default(true)
+  notifyInterviews      Boolean       @default(true)
+  notifyFollowups       Boolean       @default(true)
+  notifyWeeklySummary   Boolean       @default(true)
+
+  user                  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  @@map("preferences")
+}
+
+// =============================================================
+// PROFILE (Resume + Parsed Data)
+// =============================================================
+
+model Profile {
+  id                  String    @id @default(cuid())
+  userId              String    @unique
+
+  // Raw resume content
+  resumeFileName      String?
+  resumeFileUrl       String?   // R2 storage URL
+  resumeText          String?   @db.Text   // Extracted plain text
+
+  // GPT-4o parsed structured data
+  parsedName          String?
+  parsedEmail         String?
+  parsedPhone         String?
+  parsedLocation      String?
+  parsedSummary       String?   @db.Text
+  parsedSkills        String[]
+  parsedJson          Json?     // Full parsed resume as JSON
+
+  // LinkedIn import
+  linkedinUrl         String?
+  linkedinDataJson    Json?
+
+  // Embedding status
+  resumeEmbeddingId   String?   // Pinecone vector ID
+  embeddingUpdatedAt  DateTime?
+
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@map("profiles")
+}
+
+// =============================================================
+// JOBS
+// =============================================================
+
+model Job {
+  id           String    @id @default(cuid())
+
+  // Core fields
+  title        String
+  company      String
+  companyDomain String?  // for Clearbit logo lookup
+  location     String?
+  salaryMin    Int?
+  salaryMax    Int?
+  salaryCurrency String? @default("USD")
+
+  // Description
+  description  String    @db.Text
+  requirements String?   @db.Text
+  benefits     String?   @db.Text
+
+  // Application
+  applyUrl     String
+  atsType      AtsType   @default(UNKNOWN)
+
+  // Meta
+  source       JobSource @default(MANUAL)
+  jobType      JobType?
+  workMode     WorkMode?
+  companySize  CompanySize?
+  industry     String?
+
+  // Deduplication
+  dedupHash    String    @unique  // SHA256 of title+company+location
+
+  // Embedding
+  embeddingId  String?   // Pinecone vector ID
+
+  // Timestamps
+  postedAt     DateTime?
+  scrapedAt    DateTime  @default(now())
+  expiresAt    DateTime?
+
+  // Relationships
+  applications Application[]
+
+  @@index([company])
+  @@index([source])
+  @@index([postedAt])
+  @@index([dedupHash])
+  @@map("jobs")
+}
+
+// =============================================================
+// APPLICATIONS (Core CRM entity)
+// =============================================================
+
+model Application {
+  id               String            @id @default(cuid())
+  userId           String
+  jobId            String
+
+  // Status (Kanban column)
+  status           ApplicationStatus @default(SAVED)
+
+  // Scoring
+  matchScore       Int?              // 0-100 total
+  skillsMatch      Int?              // 0-30
+  experienceLevel  Int?              // 0-20
+  domainRelevance  Int?              // 0-20
+  salaryFit        Int?              // 0-15
+  cultureSignals   Int?              // 0-15
+  missingSkills    String[]
+  whyGoodFit       String?           @db.Text
+  potentialConcerns String?          @db.Text
+  suggestedAngle   String?           @db.Text
+
+  // Cover letter
+  coverLetter      String?           @db.Text
+  coverLetterTone  String?           // "professional", "enthusiastic", "concise"
+
+  // Apply tracking
+  appliedAt        DateTime?
+  atsType          AtsType?
+  lastActivityAt   DateTime?
+
+  // Review queue
+  reviewStatus     String?           // "pending", "approved", "skipped", "auto_approved"
+  reviewedAt       DateTime?
+
+  // Notes
+  notes            String?           @db.Text
+
+  // Follow-up
+  followUpScheduled DateTime?
+  followUpSentAt   DateTime?
+  followUpDraft    String?           @db.Text
+
+  // Relationships
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job              Job               @relation(fields: [jobId], references: [id])
+  contacts         Contact[]
+  interactions     Interaction[]
+  auditLogs        AuditLog[]
+
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@unique([userId, jobId])
+  @@index([userId, status])
+  @@index([reviewStatus])
+  @@map("applications")
+}
+
+// =============================================================
+// CONTACTS (Recruiters / Hiring Managers)
+// =============================================================
+
+model Contact {
+  id              String      @id @default(cuid())
+  applicationId   String
+
+  name            String
+  email           String?
+  linkedinUrl     String?
+  role            String?     // "Recruiter", "Hiring Manager", "Engineering Manager"
+  phone           String?
+
+  notes           String?
+
+  application     Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@map("contacts")
+}
+
+// =============================================================
+// INTERACTIONS (Timeline of events per application)
+// =============================================================
+
+model Interaction {
+  id              String          @id @default(cuid())
+  applicationId   String
+
+  type            InteractionType
+  content         String?         @db.Text  // email content, call notes, etc.
+  subject         String?         // email subject
+  direction       String?         // "inbound" | "outbound"
+  gmailMessageId  String?         // for deduplication
+  happenedAt      DateTime        @default(now())
+
+  application     Application     @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+  @@index([type])
+  @@map("interactions")
+}
+
+// =============================================================
+// AUDIT LOGS (Playwright automation trail)
+// =============================================================
+
+model AuditLog {
+  id              String      @id @default(cuid())
+  applicationId   String
+
+  action          AuditAction
+  details         String?     @db.Text
+  screenshotUrl   String?     // R2 URL
+  success         Boolean     @default(false)
+  errorMessage    String?
+  dryRun          Boolean     @default(true)
+
+  timestamp       DateTime    @default(now())
+
+  application     Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+  @@index([timestamp])
+  @@map("audit_logs")
+}
+
+// =============================================================
+// JOB QUEUE ITEMS (BullMQ task mirror for visibility)
+// =============================================================
+
+model QueueItem {
+  id              String    @id @default(cuid())
+  bullJobId       String?   @unique   // BullMQ job ID
+
+  type            String    // "scrape" | "embed" | "apply" | "gmail_sync" | "weekly_summary"
+  status          String    @default("waiting") // "waiting" | "active" | "completed" | "failed"
+  payload         Json?
+  result          Json?
+  errorMessage    String?
+  attempts        Int       @default(0)
+  maxAttempts     Int       @default(3)
+
+  createdAt       DateTime  @default(now())
+  processedAt     DateTime?
+  completedAt     DateTime?
+
+  @@index([type, status])
+  @@map("queue_items")
+}
+
+// =============================================================
+// ANALYTICS (Aggregated weekly snapshots)
+// =============================================================
+
+model WeeklySnapshot {
+  id                    String   @id @default(cuid())
+  userId                String
+
+  weekStart             DateTime
+  weekEnd               DateTime
+
+  applicationsCount     Int      @default(0)
+  responsesCount        Int      @default(0)
+  interviewsCount       Int      @default(0)
+  offersCount           Int      @default(0)
+  rejectedCount         Int      @default(0)
+  responseRate          Float    @default(0)
+
+  topSource             String?
+  avgMatchScore         Float?
+  successfulDimensions  Json?    // Which score dimensions correlated with callbacks
+
+  aiInsight             String?  @db.Text  // GPT-4o generated weekly insight
+  emailSentAt           DateTime?
+
+  createdAt             DateTime @default(now())
+
+  @@unique([userId, weekStart])
+  @@index([userId])
+  @@map("weekly_snapshots")
+}
+
+// =============================================================
+// SKILL GAP TRACKER
+// =============================================================
+
+model SkillGap {
+  id          String   @id @default(cuid())
+  userId      String
+
+  skill       String
+  frequency   Int      @default(1)   // How many job descriptions mentioned it
+  courseUrl   String?                // Recommended learning resource
+  courseTitle String?
+
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, skill])
+  @@index([userId, frequency])
+  @@map("skill_gaps")
+}
