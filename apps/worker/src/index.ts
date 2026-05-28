@@ -9,6 +9,7 @@ import { PrismaClient } from "@prisma/client";
 import cron from "node-cron";
 import dotenv from "dotenv";
 import { createTransport } from "nodemailer";
+import { sendPushNotification } from "./utils/push";
 
 dotenv.config();
 
@@ -70,6 +71,11 @@ const applyWorker = new Worker(
     const profile = await prisma.profile.findUnique({ where: { userId } });
     if (!profile) throw new Error(`Profile not found for user ${userId}`);
 
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { expoPushToken: true },
+    });
+
     const dryRun = process.env.DRY_RUN_MODE === "true";
     const atsType = application.job.atsType;
 
@@ -112,7 +118,14 @@ const applyWorker = new Worker(
       if (result.captchaDetected) {
         // Send notification to user
         console.log(`⚠️ CAPTCHA detected for application ${applicationId}`);
-        // TODO: Send push notification
+        if (user?.expoPushToken) {
+          await sendPushNotification(
+            user.expoPushToken,
+            "Action Required: CAPTCHA Detected",
+            `Please solve the CAPTCHA for your application at ${application.job.company}.`,
+            { applicationId }
+          );
+        }
       }
 
       if (!dryRun && result.success) {
@@ -124,6 +137,14 @@ const applyWorker = new Worker(
             lastActivityAt: new Date(),
           },
         });
+        if (user?.expoPushToken) {
+          await sendPushNotification(
+            user.expoPushToken,
+            "Application Submitted!",
+            `Successfully submitted your application for ${application.job.title} at ${application.job.company}.`,
+            { applicationId }
+          );
+        }
       }
 
       return result;
