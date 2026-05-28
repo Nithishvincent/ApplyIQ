@@ -12,7 +12,11 @@ import asyncio
 from openai import AsyncOpenAI
 
 router = APIRouter()
-client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = AsyncOpenAI(
+    api_key=os.getenv("OPENAI_API_KEY"),
+    base_url=os.getenv("OPENAI_API_BASE_URL") or os.getenv("OPENAI_BASE_URL") or None
+)
+OPENAI_MODEL_NAME = os.getenv("OPENAI_MODEL_NAME", "gpt-4o")
 
 RERANK_PROMPT = """You are a job-fit analyzer. Given a candidate's resume summary and a job description, score the fit.
 
@@ -96,7 +100,7 @@ async def score_single_job(
         )
 
         response = await client.chat.completions.create(
-            model="gpt-4o",
+            model=OPENAI_MODEL_NAME,
             messages=[
                 {"role": "system", "content": "You are a precise job-fit analyzer. Return only valid JSON."},
                 {"role": "user", "content": prompt},

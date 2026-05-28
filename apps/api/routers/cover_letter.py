@@ -10,7 +10,11 @@ import os
 from openai import AsyncOpenAI
 
 router = APIRouter()
-client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = AsyncOpenAI(
+    api_key=os.getenv("OPENAI_API_KEY"),
+    base_url=os.getenv("OPENAI_API_BASE_URL") or os.getenv("OPENAI_BASE_URL") or None
+)
+OPENAI_MODEL_NAME = os.getenv("OPENAI_MODEL_NAME", "gpt-4o")
 
 COVER_LETTER_PROMPT = """Write a concise, genuine cover letter (max 250 words) for this candidate applying to this role.
 
@@ -105,7 +109,7 @@ async def generate_cover_letter(request: GenerateCoverLetterRequest):
         )
 
         response = await client.chat.completions.create(
-            model="gpt-4o",
+            model=OPENAI_MODEL_NAME,
             messages=[
                 {
                     "role": "system",
@@ -160,7 +164,7 @@ async def regenerate_cover_letter(request: GenerateCoverLetterRequest):
         )
 
         response = await client.chat.completions.create(
-            model="gpt-4o",
+            model=OPENAI_MODEL_NAME,
             messages=[
                 {
                     "role": "system",

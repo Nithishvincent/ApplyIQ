@@ -17,9 +17,9 @@ from routers import recommend, profile, embeddings, cover_letter, email_classifi
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize connections on startup."""
-    print("🚀 ApplyIQ API starting up...")
+    print("[ApplyIQ API] Starting up...")
     yield
-    print("🛑 ApplyIQ API shutting down...")
+    print("[ApplyIQ API] Shutting down...")
 
 app = FastAPI(
     title="ApplyIQ AI Microservice",

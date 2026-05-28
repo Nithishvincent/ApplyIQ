@@ -11,7 +11,11 @@ import json
 from openai import AsyncOpenAI
 
 router = APIRouter()
-client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = AsyncOpenAI(
+    api_key=os.getenv("OPENAI_API_KEY"),
+    base_url=os.getenv("OPENAI_API_BASE_URL") or os.getenv("OPENAI_BASE_URL") or None
+)
+OPENAI_MODEL_NAME = os.getenv("OPENAI_MODEL_NAME", "gpt-4o")
 
 RESUME_PARSE_PROMPT = """Extract the following fields from this resume into JSON.
 Be thorough — extract all information available. Use null for missing fields.
@@ -82,7 +86,7 @@ async def parse_resume(request: ParseResumeRequest):
 
     try:
         response = await client.chat.completions.create(
-            model="gpt-4o",
+            model=OPENAI_MODEL_NAME,
             messages=[
                 {
                     "role": "system",

@@ -11,7 +11,11 @@ import json
 from openai import AsyncOpenAI
 
 router = APIRouter()
-client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = AsyncOpenAI(
+    api_key=os.getenv("OPENAI_API_KEY"),
+    base_url=os.getenv("OPENAI_API_BASE_URL") or os.getenv("OPENAI_BASE_URL") or None
+)
+OPENAI_MODEL_NAME = os.getenv("OPENAI_MODEL_NAME", "gpt-4o")
 
 CLASSIFY_PROMPT = """Analyze this email related to a job application and extract:
 1. The application status implied by this email
@@ -88,7 +92,7 @@ async def classify_email(request: ClassifyEmailRequest):
         )
 
         response = await client.chat.completions.create(
-            model="gpt-4o",
+            model=OPENAI_MODEL_NAME,
             messages=[
                 {"role": "system", "content": "You are an expert at analyzing job application emails. Return only valid JSON."},
                 {"role": "user", "content": prompt},
@@ -126,7 +130,7 @@ async def generate_followup(request: GenerateFollowupRequest):
         )
 
         response = await client.chat.completions.create(
-            model="gpt-4o",
+            model=OPENAI_MODEL_NAME,
             messages=[
                 {"role": "system", "content": "You are a professional career coach. Write warm, genuine follow-up emails that are brief and not pushy."},
                 {"role": "user", "content": prompt},

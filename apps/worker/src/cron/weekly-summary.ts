@@ -145,12 +145,13 @@ function buildEmailHtml(
 async function sendWeeklySummaries() {
   console.log("Starting weekly summary email job...");
 
+  // Query users who have weekly summary notifications enabled
+  // Filter through the preferences relation (notifyWeeklySummary field)
   const users = await prisma.user.findMany({
     where: {
-      email: { not: null },
-      preferencesJson: {
-        path: ["emailNotifications"],
-        equals: true,
+      email: { not: undefined },
+      preferences: {
+        notifyWeeklySummary: true,
       },
     },
     select: { id: true, name: true, email: true },

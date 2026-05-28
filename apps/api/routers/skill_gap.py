@@ -12,7 +12,11 @@ from openai import AsyncOpenAI
 from collections import Counter
 
 router = APIRouter()
-client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = AsyncOpenAI(
+    api_key=os.getenv("OPENAI_API_KEY"),
+    base_url=os.getenv("OPENAI_API_BASE_URL") or os.getenv("OPENAI_BASE_URL") or None
+)
+OPENAI_MODEL_NAME = os.getenv("OPENAI_MODEL_NAME", "gpt-4o")
 
 SKILL_GAP_PROMPT = """Analyze these job descriptions where the candidate did NOT match well or was rejected.
 Extract the top skills, technologies, and qualifications that appear most frequently.
@@ -109,7 +113,7 @@ async def analyze_skill_gap(request: SkillGapRequest):
         )
 
         response = await client.chat.completions.create(
-            model="gpt-4o",
+            model=OPENAI_MODEL_NAME,
             messages=[
                 {"role": "system", "content": "You are a career development expert. Identify actionable skill gaps with specific learning resources."},
                 {"role": "user", "content": prompt},
@@ -144,7 +148,7 @@ async def tune_scoring(request: ScoringTunerRequest):
         )
 
         response = await client.chat.completions.create(
-            model="gpt-4o",
+            model=OPENAI_MODEL_NAME,
             messages=[
                 {"role": "system", "content": "You are a data scientist analyzing job application success patterns. Return only valid JSON."},
                 {"role": "user", "content": prompt},

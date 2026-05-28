@@ -12,7 +12,11 @@ from openai import AsyncOpenAI
 from pinecone import Pinecone, ServerlessSpec
 
 router = APIRouter()
-openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+openai_client = AsyncOpenAI(
+    api_key=os.getenv("OPENAI_API_KEY"),
+    base_url=os.getenv("OPENAI_API_BASE_URL") or os.getenv("OPENAI_BASE_URL") or None
+)
+OPENAI_EMBEDDING_MODEL_NAME = os.getenv("OPENAI_EMBEDDING_MODEL_NAME", "text-embedding-3-small")
 
 # Lazy Pinecone initialization
 _pc: Optional[Pinecone] = None
@@ -30,7 +34,7 @@ def get_pinecone_index():
         if index_name not in existing:
             _pc.create_index(
                 name=index_name,
-                dimension=1536,  # text-embedding-3-small dimension
+                dimension=int(os.getenv("EMBEDDING_DIMENSION", "1536")),  # configurable dimension
                 metric="cosine",
                 spec=ServerlessSpec(
                     cloud="aws",
@@ -44,7 +48,7 @@ def get_pinecone_index():
 async def embed_text(text: str) -> List[float]:
     """Generate embedding for a single text string."""
     response = await openai_client.embeddings.create(
-        model="text-embedding-3-small",
+        model=OPENAI_EMBEDDING_MODEL_NAME,
         input=text[:8000],  # token limit safety
     )
     return response.data[0].embedding
